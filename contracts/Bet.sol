@@ -47,3 +47,4 @@ contract Bet {
         buyerAmountLeft -= _amount;
     }
 
+}
