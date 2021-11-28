@@ -46,5 +46,29 @@ contract Bet {
         balanceOfBuyer[msg.sender] += _amount;
         buyerAmountLeft -= _amount;
     }
+    
+    function settleBet(uint8 _eventOutcome) public {
+        if (betScenario == _eventOutcome) { /// if Bet was won by Seller
+            uint j =0;
+            uint len = sellers.length;
+            for (j; j<len; 1) { /// loop over all Sellers of the bet and pay out relative to their stake
+                if (balanceOfSeller[sellers[j]]>0) {
+                    address payable to = sellers[j]; 
+                    to.transfer(balanceOfSeller[sellers[j]]/odds); 
+                } 
+            } 
+        }
 
+        if (betScenario != _eventOutcome) { /// if Bet was won by Buyer
+            uint j =0;
+            uint len = buyers.length;
+            for (j; j<len; 1) { /// loop over all Buyers of the bet and pay out relative to their stake
+                if (balanceOfBuyer[buyers[j]]>0) {
+                    address payable to = buyers[j]; 
+                    to.transfer(balanceOfBuyer[buyers[j]]*odds); 
+                } 
+            } 
+        }
+    }
+    
 }
