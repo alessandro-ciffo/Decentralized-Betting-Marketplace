@@ -31,8 +31,8 @@ contract Bet {
     uint maxAmountBuyable;
 
     // facilitates loop over mappings
-    address [] public buyers;
-    address [] public sellers;
+    address payable[] public buyers;
+    address payable[] public sellers;
 
     //Log of current shareholders of the bet
     mapping(address => uint) public outstandingBetsSeller;
@@ -50,6 +50,7 @@ contract Bet {
     event NewBet(string teams, uint betScenario, uint odds, uint sellerMaxAmount, bool covered, uint maxAmountBuyable);
     event BetCovered(bool covered);
     event BetSold(address buyer, uint value);
+    event BetSettled(address winner, uint value);
 
     constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
         teams = _teams;
@@ -60,7 +61,7 @@ contract Bet {
         
         // seller must deposit _sellerMaxAmount inside the contract upon creation
         require(msg.value == sellerMaxAmount); 
-        outstandingBetsSeller[msg.sender] += sellerMaxAmount;
+        outstandingBetsSeller[msg.sender] += sellerMaxAmount.div(odds);
         sellers.push(msg.sender);
         isForSale[msg.sender] = false;
         emit NewBet(teams, betScenario, odds, sellerMaxAmount, covered, maxAmountBuyable);
@@ -95,8 +96,36 @@ contract Bet {
     }
 
 
-    function settleBet() public pure {
-        // TODO: redistribute money according to the outcome of the event
+    function settleBet(uint _eventOutcome) public {
+        if (betScenario == _eventOutcome) { /// if Bet was won by Seller
+            uint j =0;
+            uint len = sellers.length;
+            for (j; j<len; j++) { /// loop over all Sellers of the bet and pay out relative to their stake
+                address payable winnerAddress = sellers[j];
+                uint valueWon = outstandingBetsSeller[winnerAddress];
+
+                if (valueWon > 0) {
+                    address payable to = winnerAddress; 
+                    to.transfer(valueWon.add(valueWon.mul(odds))); //Winner gets his initial stake + stake/odds
+                    emit BetSettled(winnerAddress, valueWon);
+                } 
+            } 
+        }
+
+        if (betScenario != _eventOutcome) { /// if Bet was won by Buyer
+            uint j =0;
+            uint len = buyers.length;
+            for (j; j<len; j++) { /// loop over all Buyers of the bet and pay out relative to their stake
+                address payable winnerAddress = buyers[j];
+                uint valueWon = outstandingBetsBuyers[winnerAddress];
+
+                if (valueWon > 0) {
+                    address payable to = winnerAddress; 
+                    to.transfer(valueWon.add(valueWon.div(odds))); //Winner gets his initial stake + stake*odds
+                    emit BetSettled(winnerAddress, valueWon);
+                } 
+            }
+        }
     }
 
 
@@ -147,8 +176,8 @@ contract Bet {
 
     // TODO:
     // - Implement oracle to get data about event outcome
-    // - Implement function to settle payments at the end of the event
     // - assure unique addresses in buyers/sellers array
-    
+    // - make sure transfer functions are safe
+    // - make sure require functions etc. prevent all kinds of malicious use cases
 
 }
