@@ -44,13 +44,15 @@ contract Bet {
         uint price;     // the price for which this amount should be sold
         bool isBuyer;   // if the bet is offered by a Buyer --> buyer = true
     }
-    mapping(address => BetToSale) public positionsForSale; // 
+    mapping(address => BetToSale) public positionsForSale; //mapping containing all the bets which are currently for resell
     mapping(address => bool) public isForSale; // a buyer's entry in the mapping is set to true if they want to resell the bet
+    mapping (address => uint) priceAsked; // maps buyers to the price they ask to resell their bet's position
     
     event NewBet(string teams, uint betScenario, uint odds, uint sellerMaxAmount, bool covered, uint maxAmountBuyable);
     event BetCovered(bool covered);
     event BetSold(address buyer, uint value);
     event BetSettled(address winner, uint value);
+    event BetResold(address from, address to, uint price, uint amount);
 
     constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
         teams = _teams;
@@ -83,6 +85,7 @@ contract Bet {
     }
 
     function checkContractBalance() public view returns(uint) {
+        // check balance of the contract
         return address(this).balance;
     }
 
@@ -97,10 +100,13 @@ contract Bet {
 
 
     function settleBet(uint _eventOutcome) public {
+        // function to be called after bet is finished
+        // discriminates between Sellers and Buyers
+        // TODO: connect _eventOutcome to checkEventOutcome() when oracle is done
         if (betScenario == _eventOutcome) { /// if Bet was won by Seller
             uint j =0;
             uint len = sellers.length;
-            for (j; j<len; j++) { /// loop over all Sellers of the bet and pay out relative to their stake
+            for (j; j<len; j++) { /// loop over all Sellers of the bet and pay out the won amount relative to their stake
                 address payable winnerAddress = sellers[j];
                 uint valueWon = outstandingBetsSeller[winnerAddress];
 
@@ -115,7 +121,7 @@ contract Bet {
         if (betScenario != _eventOutcome) { /// if Bet was won by Buyer
             uint j =0;
             uint len = buyers.length;
-            for (j; j<len; j++) { /// loop over all Buyers of the bet and pay out relative to their stake
+            for (j; j<len; j++) { /// loop over all Buyers of the bet and pay out the won amount relative to their stake
                 address payable winnerAddress = buyers[j];
                 uint valueWon = outstandingBetsBuyers[winnerAddress];
 
@@ -131,29 +137,30 @@ contract Bet {
 
     // Bet reselling 
     
-    mapping (address => uint) priceAsked; // maps buyers to the price they ask to resell their bet's position
-
-    event BetResold(address from, address to, uint price, uint amount);
-
+    
     function putPositionForSale(address _reseller, uint _price, uint _betAmount, bool _isBuyer) public {
+    // function to put position on sale 
         require(msg.sender == _reseller); // only reseller can put their position for sale
-        if (_isBuyer == true) {
+        
+        // component makes sure that one can only put a amount(=potential payoff of position) of the bet for sale which the person actually owns
+        if (_isBuyer == true) { 
             require(_betAmount <= outstandingBetsBuyers[_reseller]);
         } else {
             require(_betAmount <=  outstandingBetsSeller[_reseller]);
         }
 
         uint price = _price; // convert price from Finney to Wei
-        positionsForSale[msg.sender] = BetToSale( _betAmount, price, _isBuyer); // update mapping of prices asked by resellers
+        positionsForSale[msg.sender] = BetToSale( _betAmount, price, _isBuyer); // creates a new entry for the bet in mapping with all the necessary information
         isForSale[msg.sender] = true; // position is now for sale
     }
 
     function buyResellerPosition(address payable _reseller) public payable {
-        require(isForSale[_reseller] == true);
+        // function to buy a position which is up for sale
+        require(isForSale[_reseller] == true, "Position is currently not up for sale");
         require(msg.value == positionsForSale[_reseller].price, "Message value has to be equal to the price specified in the offer");
 
-        
-        if (positionsForSale[_reseller].isBuyer == true) {
+        // component substacts sold amount from reseller and add its to buyer of the position in the respective Bet-Log
+        if (positionsForSale[_reseller].isBuyer == true) { 
             outstandingBetsBuyers[_reseller] = outstandingBetsBuyers[_reseller].sub(positionsForSale[_reseller].amount);
             outstandingBetsBuyers[msg.sender] = outstandingBetsBuyers[msg.sender].add(positionsForSale[_reseller].amount);
         } else {
@@ -176,8 +183,8 @@ contract Bet {
 
     // TODO:
     // - Implement oracle to get data about event outcome
+    // - Implement function to settle payments at the end of the event
     // - assure unique addresses in buyers/sellers array
-    // - make sure transfer functions are safe
-    // - make sure require functions etc. prevent all kinds of malicious use cases
+    
 
 }
