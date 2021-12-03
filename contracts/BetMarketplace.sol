@@ -103,7 +103,7 @@ contract Bet {
         // function to be called after bet is finished
         // discriminates between Sellers and Buyers
         // TODO: connect _eventOutcome to checkEventOutcome() when oracle is done
-        // TODO: modify function to just put outstandingBets of the winning side as a new mapping e.g. winners
+        // TODO: modify function to just put outstandingBets of the winning side as a new mapping e.g. winners (Loops probably unnecessary now, as well as arrays) 
         // TODO: Winners mapping should contain the addresses of outstanding bet and the valueWon + stake
         // TODO: Account for the case that the bet wasnt completly bought up by the buyer
         if (betScenario == _eventOutcome) { /// if Bet was won by Seller
@@ -187,7 +187,7 @@ contract Bet {
     // TODO:
     // - Implement oracle to get data about event outcome
     // - Modify function to settle payments at the end of the event
-    // - assure unique addresses in buyers/sellers array
+    // (- assure unique addresses in buyers/sellers array)
     // - create withdrawl function
     
 
