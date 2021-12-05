@@ -8,7 +8,7 @@ import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contr
 
 contract BetFactory {
     
-    Bet[] bets;
+    Bet[] bets; //shouldn't we define Bet as struct?
     
     function createBet(string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public {
         Bet bet = new Bet(_teams, _betScenario, _odds, _sellerMaxAmount);
