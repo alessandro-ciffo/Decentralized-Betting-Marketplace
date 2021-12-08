@@ -2,6 +2,7 @@ pragma solidity ^0.5.0;
 
 
 
+import "github.com/provable-things/ethereum-api/provableAPI_0.5.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/math/SafeMath.sol"; 
 
 
@@ -19,7 +20,7 @@ contract BetFactory {
 
 
 
-contract Bet {
+contract Bet is usingProvable {
 
     using SafeMath for uint256;
     
@@ -30,23 +31,23 @@ contract Bet {
     bool covered;
     uint maxAmountBuyable;
 
-    // facilitates loop over mappings
-    address payable[] public buyers;
-    address payable[] public sellers;
+    uint public outcome;
+    bool public eventFinished = false;
 
     //Log of current shareholders of the bet
     mapping(address => uint) public outstandingBetsSeller;
     mapping(address => uint) public outstandingBetsBuyers;
     
-
     struct BetToSale {   
         uint amount;    // amount of the bet which should be sold
         uint price;     // the price for which this amount should be sold
         bool isBuyer;   // if the bet is offered by a Buyer --> buyer = true
     }
+
     mapping(address => BetToSale) public positionsForSale; //mapping containing all the bets which are currently for resell
     mapping(address => bool) public isForSale; // a buyer's entry in the mapping is set to true if they want to resell the bet
-    mapping (address => uint) priceAsked; // maps buyers to the price they ask to resell their bet's position
+    mapping (address => uint) public priceAsked; // maps buyers to the price they ask to resell their bet's position
+    mapping (address => uint) public winners; // mapping of winners and amount available for withdrawal
     
     event NewBet(string teams, uint betScenario, uint odds, uint sellerMaxAmount, bool covered, uint maxAmountBuyable);
     event BetCovered(bool covered);
@@ -64,7 +65,6 @@ contract Bet {
         // seller must deposit _sellerMaxAmount inside the contract upon creation
         require(msg.value == sellerMaxAmount); 
         outstandingBetsSeller[msg.sender] += sellerMaxAmount.div(odds);
-        sellers.push(msg.sender);
         isForSale[msg.sender] = false;
         emit NewBet(teams, betScenario, odds, sellerMaxAmount, covered, maxAmountBuyable);
     }
@@ -75,7 +75,6 @@ contract Bet {
         outstandingBetsBuyers[msg.sender] = outstandingBetsBuyers[msg.sender].add(msg.value.mul(odds));  // Update buyers entry in the mapping with the amount they could win
         isForSale[msg.sender] = false; // buyer's position is not for sale by default
         maxAmountBuyable = maxAmountBuyable.sub(msg.value);
-        buyers.push(msg.sender);
         emit BetSold(msg.sender, msg.value);
     }
 
@@ -94,47 +93,40 @@ contract Bet {
         return outstandingBetsBuyers[msg.sender];
     }
 
-    function checkEventOutcome() public pure {
-        // TODO: check the outcome of the event (home team won, draw, home team lost) using external data 
+    function getEventOutcome() public payable {
+        require(address(this).balance > provable_getPrice("URL")); // make sure there are enough funds to call the API
+        string memory url = string(abi.encodePacked("json(http://hard-fireant-33.loca.lt/api/v1/matches/?name=", teams, ").outcome"));
+        provable_query("URL", url);
     }
 
+    function __callback(bytes32 _myid, uint _result) public {
+        if (msg.sender != provable_cbAddress()) revert();
+        outcome = _result;
+        eventFinished = true;
+    }
+
+    function checkOutcome() public view returns(uint) {
+        // check outcome of the event
+        return outcome;
+    }
 
     function settleBet(uint _eventOutcome) public {
-        // function to be called after bet is finished
-        // discriminates between Sellers and Buyers
-        // TODO: connect _eventOutcome to checkEventOutcome() when oracle is done
-        // TODO: modify function to just put outstandingBets of the winning side as a new mapping e.g. winners (Loops probably unnecessary now, as well as arrays) 
-        // TODO: Winners mapping should contain the addresses of outstanding bet and the valueWon + stake
-        // TODO: Account for the case that the bet wasnt completly bought up by the buyer
-        if (betScenario == _eventOutcome) { /// if Bet was won by Seller
-            uint j =0;
-            uint len = sellers.length;
-            for (j; j<len; j++) { /// loop over all Sellers of the bet and pay out the won amount relative to their stake
-                address payable winnerAddress = sellers[j];
-                uint valueWon = outstandingBetsSeller[winnerAddress];
-
-                if (valueWon > 0) {
-                    address payable to = winnerAddress; 
-                    to.transfer(valueWon.add(valueWon.mul(odds))); //Winner gets his initial stake + stake/odds
-                    emit BetSettled(winnerAddress, valueWon);
-                } 
-            } 
+        // function to be called after bet is finished. 
+        // buyers win if the outcome of the event occurs, otherwise sellers win
+        // TODO: mappings can't be assigned this way, check this https://ethereum.stackexchange.com/questions/8092/assignment-of-mapping-in-solidity/24524
+        require(eventFinished);
+        if (_eventOutcome == outcome) {
+            winners = outstandingBetsBuyers;
+        } else {
+            winners = outstandingBetsSeller;
         }
+    }
 
-        if (betScenario != _eventOutcome) { /// if Bet was won by Buyer
-            uint j =0;
-            uint len = buyers.length;
-            for (j; j<len; j++) { /// loop over all Buyers of the bet and pay out the won amount relative to their stake
-                address payable winnerAddress = buyers[j];
-                uint valueWon = outstandingBetsBuyers[winnerAddress];
-
-                if (valueWon > 0) {
-                    address payable to = winnerAddress; 
-                    to.transfer(valueWon.add(valueWon.div(odds))); //Winner gets his initial stake + stake*odds
-                    emit BetSettled(winnerAddress, valueWon);
-                } 
-            }
-        }
+    function withdrawGains(address _winner) public {
+        // function that winners can call to withdraw their gains
+        require(eventFinished);
+        require(msg.sender == _winner);
+        msg.sender.transfer(winners[_winner]);
     }
 
 
