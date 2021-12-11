@@ -125,7 +125,7 @@ contract Bet is usingProvable {
         // buyers win if the outcome of the event occurs, otherwise sellers win
         // TODO: mappings can't be assigned this way, check this https://ethereum.stackexchange.com/questions/8092/assignment-of-mapping-in-solidity/24524
         //require(eventFinished);
-        if (_eventOutcome == outcome) {
+        if (_eventOutcome == betScenario) {
             for(uint256 i; i < sellers.length; i++) {
                 winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
                 buyersWon = false;
