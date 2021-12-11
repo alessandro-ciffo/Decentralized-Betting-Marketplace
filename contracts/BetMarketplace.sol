@@ -30,9 +30,16 @@ contract Bet is usingProvable {
     uint sellerMaxAmount; // in Wei, 1 Ether = 1e18 Wei 
     bool covered;
     uint maxAmountBuyable;
+    bool buyersWon;
 
     uint public outcome;
     bool public eventFinished = false;
+
+    // facilitates loop over mappings
+    address payable[] public buyers;
+    address payable[] public sellers;
+
+
 
     //Log of current shareholders of the bet
     mapping(address => uint) public outstandingBetsSeller;
@@ -48,12 +55,13 @@ contract Bet is usingProvable {
     mapping(address => bool) public isForSale; // a buyer's entry in the mapping is set to true if they want to resell the bet
     mapping (address => uint) public priceAsked; // maps buyers to the price they ask to resell their bet's position
     mapping (address => uint) public winners; // mapping of winners and amount available for withdrawal
-    
+
     event NewBet(string teams, uint betScenario, uint odds, uint sellerMaxAmount, bool covered, uint maxAmountBuyable);
     event BetCovered(bool covered);
     event BetSold(address buyer, uint value);
     event BetSettled(address winner, uint value);
     event BetResold(address from, address to, uint price, uint amount);
+    event BetPaidOut(address to, uint amount);
 
     constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
         teams = _teams;
@@ -65,6 +73,7 @@ contract Bet is usingProvable {
         // seller must deposit _sellerMaxAmount inside the contract upon creation
         require(msg.value == sellerMaxAmount); 
         outstandingBetsSeller[msg.sender] += sellerMaxAmount.div(odds);
+        sellers.push(msg.sender);
         isForSale[msg.sender] = false;
         emit NewBet(teams, betScenario, odds, sellerMaxAmount, covered, maxAmountBuyable);
     }
@@ -74,6 +83,7 @@ contract Bet is usingProvable {
         require(msg.value <= maxAmountBuyable);
         outstandingBetsBuyers[msg.sender] = outstandingBetsBuyers[msg.sender].add(msg.value.mul(odds));  // Update buyers entry in the mapping with the amount they could win
         isForSale[msg.sender] = false; // buyer's position is not for sale by default
+        buyers.push(msg.sender); 
         maxAmountBuyable = maxAmountBuyable.sub(msg.value);
         emit BetSold(msg.sender, msg.value);
     }
@@ -114,34 +124,48 @@ contract Bet is usingProvable {
         // function to be called after bet is finished. 
         // buyers win if the outcome of the event occurs, otherwise sellers win
         // TODO: mappings can't be assigned this way, check this https://ethereum.stackexchange.com/questions/8092/assignment-of-mapping-in-solidity/24524
-        require(eventFinished);
-        if (_eventOutcome == outcome) {
-            winners = outstandingBetsBuyers;
+        //require(eventFinished);
+        if (_eventOutcome == betScenario) {
+            for(uint256 i; i < sellers.length; i++) {
+                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
+                buyersWon = false;
+            }
         } else {
-            winners = outstandingBetsSeller;
-        }
+            for(uint256 i; i < buyers.length; i++) {
+                winners[buyers[i]] = outstandingBetsBuyers[buyers[i]];
+                buyersWon = true;
+            }
+        }      
     }
 
-    function withdrawGains(address _winner) public {
+    function withdrawGains() public payable{
         // function that winners can call to withdraw their gains
-        require(eventFinished);
-        require(msg.sender == _winner);
-        msg.sender.transfer(winners[_winner]);
+        // require(eventFinished);
+        if (buyersWon == true) {
+            msg.sender.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
+            outstandingBetsBuyers[msg.sender] =  outstandingBetsBuyers[msg.sender].sub(winners[msg.sender]);
+            
+        } else {
+            msg.sender.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
+            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(winners[msg.sender]);
+        }
+            
+        winners[msg.sender] = winners[msg.sender].sub(winners[msg.sender]); // substracts amount paid out from winners mapping
+        emit BetPaidOut(msg.sender, winners[msg.sender]);
     }
 
 
     // Bet reselling 
     
     
-    function putPositionForSale(address _reseller, uint _price, uint _betAmount, bool _isBuyer) public {
+    function putPositionForSale(uint _price, uint _betAmount, bool _isBuyer) public {
     // function to put position on sale 
-        require(msg.sender == _reseller); // only reseller can put their position for sale
         
         // component makes sure that one can only put a amount(=potential payoff of position) of the bet for sale which the person actually owns
         if (_isBuyer == true) { 
-            require(_betAmount <= outstandingBetsBuyers[_reseller]);
+            require(_betAmount <= outstandingBetsBuyers[msg.sender]);
         } else {
-            require(_betAmount <=  outstandingBetsSeller[_reseller]);
+            require(_betAmount <=  outstandingBetsSeller[msg.sender]);
         }
 
         uint price = _price; // convert price from Finney to Wei
@@ -155,14 +179,20 @@ contract Bet is usingProvable {
         require(msg.value == positionsForSale[_reseller].price, "Message value has to be equal to the price specified in the offer");
 
         // component substacts sold amount from reseller and add its to buyer of the position in the respective Bet-Log
-        if (positionsForSale[_reseller].isBuyer == true) { 
+        if (positionsForSale[_reseller].isBuyer == true) {
             outstandingBetsBuyers[_reseller] = outstandingBetsBuyers[_reseller].sub(positionsForSale[_reseller].amount);
             outstandingBetsBuyers[msg.sender] = outstandingBetsBuyers[msg.sender].add(positionsForSale[_reseller].amount);
+            buyers.push(msg.sender);
+            address payable to = _reseller; // amount is getting paid to reseller
+            to.transfer(msg.value);
         } else {
             outstandingBetsSeller[_reseller] = outstandingBetsSeller[_reseller].sub(positionsForSale[_reseller].amount);
             outstandingBetsSeller[msg.sender] = outstandingBetsSeller[msg.sender].add(positionsForSale[_reseller].amount);
+            sellers.push(msg.sender);
+            address payable to = _reseller; // amount is getting paid to reseller
+            to.transfer(msg.value);
         }
-        
+
         isForSale[msg.sender] = false; // rebuyer's position is not for sale by default
         isForSale[_reseller] = false;
         emit BetResold(_reseller, msg.sender, msg.value, positionsForSale[_reseller].amount);
