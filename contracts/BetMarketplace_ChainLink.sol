@@ -9,10 +9,24 @@ import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 contract BetFactory {
     
     Bet[] bets; //shouldn't we define Bet as struct?
-    
-    function createBet(string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public {
-        Bet bet = new Bet(_teams, _betScenario, _odds, _sellerMaxAmount);
+    uint counterId = 0;
+
+    event betCreated(address betAddress, uint Id);
+
+    function createBet(string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable{
+        Bet bet = (new Bet).value(msg.value)(_teams, _betScenario, _odds, _sellerMaxAmount, counterId);
         bets.push(bet);
+        counterId++;
+        emit betCreated(address(bet), counterId);
+    }
+
+    function buyBet(Bet bet) external payable{
+        bets[bet.id()].buyBet();
+    }
+
+    function checkContractBalance() public view returns(uint) {
+        // check balance of the contract
+        return address(this).balance;
     }
 
 }
@@ -25,9 +39,13 @@ contract Bet is ChainlinkClient {
     using Chainlink for Chainlink.Request;
 
     // Chainlink variables
-    address private oracle;
-    bytes32 private jobId;
-    uint256 private fee;
+    address  oracle;
+    bytes32  jobId;
+    uint256 fee;
+
+
+    uint counterId;
+    uint public id;
 
     string teams;
     uint8 betScenario;
@@ -70,7 +88,8 @@ contract Bet is ChainlinkClient {
 
     event RequestEventOutcomeFulfilled(bytes32 indexed requestID, uint256 eventOutcome);
 
-    constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
+    constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount, uint256 _counterId) public payable {
+        id = _counterId;
         teams = _teams;
         betScenario = _betScenario;
         odds = _odds;
@@ -81,9 +100,11 @@ contract Bet is ChainlinkClient {
             // oracle, jobID, fee are details given by the operator choosen for this job
             // operators can be found on https://market.link/search/jobs?query=Get%20%3E%20Uint256
         setPublicChainlinkToken();
-        oracle = 0x10Eb8e4D834e9ef61076100f8CA7936326C6807A;
-        jobId = "d1b5c9b72e224ab6a5826b429fdff9c2";
-        fee = 0.1 * 10 ** 18;
+        oracle = 0x1b666ad0d20bC4F35f218120d7ed1e2df60627cC;
+        jobId = "2d3cc1fdfede46a0830bbbf5c0de2528";
+        fee = 1;
+        fee = fee.div(20);
+        //fee = 0.1 * 10 ** 18;
         
         // seller must deposit _sellerMaxAmount inside the contract upon creation
         require(msg.value == sellerMaxAmount); 
@@ -120,15 +141,23 @@ contract Bet is ChainlinkClient {
         return outstandingBetsBuyers[msg.sender];
     }
 
+
+
     function getEventOutcome() public returns (bytes32 requestId) {
         // function calls oracle
         // before calling this function Link (the currency of the oracle-provider used here) has
         // to be transfered from your Metamask wallet to the contract
+        //oracle = _oracle;
+        //jobId = _jobId;
+        //fee = _fee;
+        // address _oracle, bytes32  _jobId ,uint256 _fee
+
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
+
         
         // Set the URL to perform the GET request on
         request.add("get", "https://min-api.cryptocompare.com/data/pricemultifull?fsyms=ETH&tsyms=USD");
-        request.add("path", "RAW.ETH.USD.VOLUME24HOUR");
+        request.add("path", "RAW.ETH.USD.TYPE");
         // Sends the request
         return sendChainlinkRequestTo(oracle, request, fee);
     }
