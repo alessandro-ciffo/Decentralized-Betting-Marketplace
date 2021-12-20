@@ -6,32 +6,6 @@ import "github.com/provable-things/ethereum-api/provableAPI_0.5.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/math/SafeMath.sol"; 
 import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 
-contract BetFactory {
-    
-    Bet[] bets; //shouldn't we define Bet as struct?
-    uint counterId = 0;
-
-    event betCreated(address betAddress, uint Id);
-
-    function createBet(string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable{
-        Bet bet = (new Bet).value(msg.value)(_teams, _betScenario, _odds, _sellerMaxAmount, counterId);
-        bets.push(bet);
-        counterId++;
-        emit betCreated(address(bet), counterId);
-    }
-
-    function buyBet(Bet bet) external payable{
-        bets[bet.id()].buyBet();
-    }
-
-    function checkContractBalance() public view returns(uint) {
-        // check balance of the contract
-        return address(this).balance;
-    }
-
-}
-
-
 
 contract Bet is ChainlinkClient {
 
@@ -43,6 +17,7 @@ contract Bet is ChainlinkClient {
     bytes32  jobId;
     uint256 fee;
 
+    
 
     uint counterId;
     uint public id;
@@ -100,10 +75,12 @@ contract Bet is ChainlinkClient {
             // oracle, jobID, fee are details given by the operator choosen for this job
             // operators can be found on https://market.link/search/jobs?query=Get%20%3E%20Uint256
         setPublicChainlinkToken();
+        // put it some where else
         oracle = 0x1b666ad0d20bC4F35f218120d7ed1e2df60627cC;
         jobId = "2d3cc1fdfede46a0830bbbf5c0de2528";
         fee = 1;
         fee = fee.div(20);
+
         //fee = 0.1 * 10 ** 18;
         
         // seller must deposit _sellerMaxAmount inside the contract upon creation
@@ -156,8 +133,8 @@ contract Bet is ChainlinkClient {
 
         
         // Set the URL to perform the GET request on
-        request.add("get", "https://min-api.cryptocompare.com/data/pricemultifull?fsyms=ETH&tsyms=USD");
-        request.add("path", "RAW.ETH.USD.TYPE");
+        request.add("get", "http://perfect-elephant-13.loca.lt/api/v1/matches/?name=Inter-Roma");
+        request.add("path", "CONTRACT.outcome");
         // Sends the request
         return sendChainlinkRequestTo(oracle, request, fee);
     }
