@@ -1,36 +1,31 @@
 pragma solidity ^0.5.0;
 
-
-
-import "github.com/provable-things/ethereum-api/provableAPI_0.5.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/math/SafeMath.sol"; 
+import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 
+// If you want to deploy the contract in the JavaVM you have to:
+// - set eventFinished= true (Line 34) 
+// - comment out setPublicChainlinkToken(); in constructor (Line 75)
 
-
-contract BetFactory {
-    
-    Bet[] bets; //shouldn't we define Bet as struct?
-    
-    function createBet(string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public {
-        Bet bet = new Bet(_teams, _betScenario, _odds, _sellerMaxAmount);
-        bets.push(bet);
-    }
-
-}
-
-
-
-contract Bet is usingProvable {
+contract Bet is ChainlinkClient {
 
     using SafeMath for uint256;
-    
+    using Chainlink for Chainlink.Request;
+
+    // Chainlink variables
+    // oracle, jobID, fee are details given by the operator choosen for this job
+    address oracle = 0x1b666ad0d20bC4F35f218120d7ed1e2df60627cC;
+    bytes32 jobId = "2d3cc1fdfede46a0830bbbf5c0de2528";
+    uint fee = 1;
+
     string teams;
     uint8 betScenario;
     uint odds;
     uint sellerMaxAmount; // in Wei, 1 Ether = 1e18 Wei 
     bool covered;
     uint maxAmountBuyable;
-    bool buyersWon;
+    bool public buyersWon;
+    bool public betSettled = false;
 
     uint public outcome;
     bool public eventFinished = false;
@@ -38,8 +33,6 @@ contract Bet is usingProvable {
     // facilitates loop over mappings
     address payable[] public buyers;
     address payable[] public sellers;
-
-
 
     //Log of current shareholders of the bet
     mapping(address => uint) public outstandingBetsSeller;
@@ -59,9 +52,9 @@ contract Bet is usingProvable {
     event NewBet(string teams, uint betScenario, uint odds, uint sellerMaxAmount, bool covered, uint maxAmountBuyable);
     event BetCovered(bool covered);
     event BetSold(address buyer, uint value);
-    event BetSettled(address winner, uint value);
     event BetResold(address from, address to, uint price, uint amount);
     event BetPaidOut(address to, uint amount);
+    event RequestEventOutcomeFulfilled(bytes32 indexed requestID, uint256 eventOutcome);
 
     constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
         teams = _teams;
@@ -69,6 +62,10 @@ contract Bet is usingProvable {
         odds = _odds;
         sellerMaxAmount = _sellerMaxAmount;
         maxAmountBuyable = sellerMaxAmount.div(odds);
+
+        // operators can be found on https://market.link/search/jobs?query=Get%20%3E%20Uint256
+        setPublicChainlinkToken();
+        fee = fee.div(20);
         
         // seller must deposit _sellerMaxAmount inside the contract upon creation
         require(msg.value == sellerMaxAmount); 
@@ -103,55 +100,77 @@ contract Bet is usingProvable {
         return outstandingBetsBuyers[msg.sender];
     }
 
-    function getEventOutcome() public payable {
-        require(address(this).balance > provable_getPrice("URL")); // make sure there are enough funds to call the API
-        string memory url = string(abi.encodePacked("json(http://hard-fireant-33.loca.lt/api/v1/matches/?name=", teams, ").outcome"));
-        provable_query("URL", url);
+    function getEventOutcome() public returns (bytes32 requestId) {
+        // this function calls the oracle to retrieve the match outcome (home team won, draw, away team won)
+        // before calling this function Link (the currency of the oracle-provider used here) has
+        // to be transfered from your Metamask wallet to the contract
+        Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
+        // Set the URL to perform the GET request on
+        string memory url = string(abi.encodePacked("http://big-lizard-50.loca.lt/api/v1/matches/?name=", teams));
+        request.add("get", url);
+        request.add("path", "CONTRACT.outcome");
+        // Sends the request
+        return sendChainlinkRequestTo(oracle, request, fee);
     }
 
-    function __callback(bytes32 _myid, uint _result) public {
-        if (msg.sender != provable_cbAddress()) revert();
-        outcome = _result;
+    function fulfill(bytes32 _requestId, uint256 _outcome) public recordChainlinkFulfillment(_requestId) {
+        // callback function of the oracle
+        outcome = _outcome;
         eventFinished = true;
     }
+
 
     function checkOutcome() public view returns(uint) {
         // check outcome of the event
         return outcome;
     }
 
-    function settleBet(uint _eventOutcome) public {
+    function settleBet() public {
         // function to be called after bet is finished. 
         // buyers win if the outcome of the event occurs, otherwise sellers win
-        // TODO: mappings can't be assigned this way, check this https://ethereum.stackexchange.com/questions/8092/assignment-of-mapping-in-solidity/24524
-        //require(eventFinished);
-        if (_eventOutcome == betScenario) {
-            for(uint256 i; i < sellers.length; i++) {
-                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
-                buyersWon = false;
-            }
-        } else {
+        require(eventFinished);
+        if (outcome == betScenario) {
             for(uint256 i; i < buyers.length; i++) {
                 winners[buyers[i]] = outstandingBetsBuyers[buyers[i]];
-                buyersWon = true;
             }
-        }      
+            buyersWon = true;
+        } else {
+            for(uint256 i; i < sellers.length; i++) {
+                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
+            }
+            buyersWon = false;
+        }
+
+        // If Bet hasnt been bought up completly --> Sellers should get their stake back
+        // Sellers are also added to the winners mapping with value: Percentual Stake * maxAmountBuyable
+        if (maxAmountBuyable > 0) {
+            for(uint256 i; i < sellers.length; i++) {
+                uint percentualStake = (outstandingBetsSeller[sellers[i]].mul(odds).div(sellerMaxAmount));
+                winners[sellers[i]] = (percentualStake.mul(maxAmountBuyable)).mul(odds);
+            }
+        }
+
+        betSettled = true;      
     }
 
     function withdrawGains() public payable{
         // function that winners can call to withdraw their gains
-        // require(eventFinished);
-        if (buyersWon == true) {
-            msg.sender.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
-            outstandingBetsBuyers[msg.sender] =  outstandingBetsBuyers[msg.sender].sub(winners[msg.sender]);
+        require(betSettled == true,"The bet has to be settled first!");
+        address payable to = msg.sender;
+        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back 
+        if (maxAmountBuyable > 0) {
+            to.transfer(winners[msg.sender]);
             
-        } else {
-            msg.sender.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
-            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(winners[msg.sender]);
         }
-            
-        winners[msg.sender] = winners[msg.sender].sub(winners[msg.sender]); // substracts amount paid out from winners mapping
+        // distinguish between buyer and seller cases
+        if (buyersWon == true) {
+            to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
+        } else {
+            to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
+        }
+        delete winners[to];
         emit BetPaidOut(msg.sender, winners[msg.sender]);
+    
     }
 
 
@@ -200,17 +219,6 @@ contract Bet is usingProvable {
         // offered position should be deleted
         delete positionsForSale[_reseller];
     }
-
-    //Comments:
-    // - fyi: took the price transformations to Wei out for conviniece, as one can set the value of transaction to Wei in remix
-    // - Both Buyers and Sellers can now put their bet for sale (even only partly)
-    // - TBD: Now Reoffered Bets can be only bought completly, we could even implement it in a way for it only being bought partly
-
-    // TODO:
-    // - Implement oracle to get data about event outcome
-    // - Modify function to settle payments at the end of the event
-    // (- assure unique addresses in buyers/sellers array)
-    // - create withdrawl function
     
 
 }
