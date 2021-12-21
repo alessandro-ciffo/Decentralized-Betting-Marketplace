@@ -1,8 +1,5 @@
 pragma solidity ^0.5.0;
 
-
-
-import "github.com/provable-things/ethereum-api/provableAPI_0.5.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/math/SafeMath.sol"; 
 import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 
@@ -16,10 +13,10 @@ contract Bet is ChainlinkClient {
     using Chainlink for Chainlink.Request;
 
     // Chainlink variables
-    address  oracle;
-    bytes32  jobId;
-    uint256 fee;
-
+    // oracle, jobID, fee are details given by the operator choosen for this job
+    address oracle = 0x1b666ad0d20bC4F35f218120d7ed1e2df60627cC;
+    bytes32 jobId = "2d3cc1fdfede46a0830bbbf5c0de2528";
+    uint fee = 1;
 
     string teams;
     uint8 betScenario;
@@ -36,8 +33,6 @@ contract Bet is ChainlinkClient {
     // facilitates loop over mappings
     address payable[] public buyers;
     address payable[] public sellers;
-
-
 
     //Log of current shareholders of the bet
     mapping(address => uint) public outstandingBetsSeller;
@@ -59,7 +54,6 @@ contract Bet is ChainlinkClient {
     event BetSold(address buyer, uint value);
     event BetResold(address from, address to, uint price, uint amount);
     event BetPaidOut(address to, uint amount);
-
     event RequestEventOutcomeFulfilled(bytes32 indexed requestID, uint256 eventOutcome);
 
     constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
@@ -69,17 +63,9 @@ contract Bet is ChainlinkClient {
         sellerMaxAmount = _sellerMaxAmount;
         maxAmountBuyable = sellerMaxAmount.div(odds);
 
-        // initalizing oracle parameters
-            // oracle, jobID, fee are details given by the operator choosen for this job
-            // operators can be found on https://market.link/search/jobs?query=Get%20%3E%20Uint256
+        // operators can be found on https://market.link/search/jobs?query=Get%20%3E%20Uint256
         setPublicChainlinkToken();
-        // put it some where else
-        oracle = 0x1b666ad0d20bC4F35f218120d7ed1e2df60627cC;
-        jobId = "2d3cc1fdfede46a0830bbbf5c0de2528";
-        fee = 1;
         fee = fee.div(20);
-
-        //fee = 0.1 * 10 ** 18;
         
         // seller must deposit _sellerMaxAmount inside the contract upon creation
         require(msg.value == sellerMaxAmount); 
@@ -87,8 +73,6 @@ contract Bet is ChainlinkClient {
         sellers.push(msg.sender);
         isForSale[msg.sender] = false;
         emit NewBet(teams, betScenario, odds, sellerMaxAmount, covered, maxAmountBuyable);
-
-    
     }
 
     function buyBet() public payable {
@@ -116,23 +100,14 @@ contract Bet is ChainlinkClient {
         return outstandingBetsBuyers[msg.sender];
     }
 
-
-
-
     function getEventOutcome() public returns (bytes32 requestId) {
-        // function calls oracle
+        // this function calls the oracle to retrieve the match outcome (home team won, draw, away team won)
         // before calling this function Link (the currency of the oracle-provider used here) has
         // to be transfered from your Metamask wallet to the contract
-        //oracle = _oracle;
-        //jobId = _jobId;
-        //fee = _fee;
-        // address _oracle, bytes32  _jobId ,uint256 _fee
-
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
-
-        
         // Set the URL to perform the GET request on
-        request.add("get", "https://giant-vampirebat-62.loca.lt/api/v1/matches/?name=Inter-Roma");
+        string memory url = string(abi.encodePacked("http://big-lizard-50.loca.lt/api/v1/matches/?name=", teams));
+        request.add("get", url);
         request.add("path", "CONTRACT.outcome");
         // Sends the request
         return sendChainlinkRequestTo(oracle, request, fee);
@@ -155,19 +130,19 @@ contract Bet is ChainlinkClient {
         // buyers win if the outcome of the event occurs, otherwise sellers win
         require(eventFinished);
         if (outcome == betScenario) {
-            for(uint256 i; i < sellers.length; i++) {
-                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
-            }
-            buyersWon = false;
-        } else {
             for(uint256 i; i < buyers.length; i++) {
                 winners[buyers[i]] = outstandingBetsBuyers[buyers[i]];
             }
             buyersWon = true;
+        } else {
+            for(uint256 i; i < sellers.length; i++) {
+                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
+            }
+            buyersWon = false;
         }
 
-        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back
-        // - Sellers are also to the winners-mapping with value: Percentual Stake * maxAmountBuyable
+        // If Bet hasnt been bought up completly --> Sellers should get their stake back
+        // Sellers are also added to the winners mapping with value: Percentual Stake * maxAmountBuyable
         if (maxAmountBuyable > 0) {
             for(uint256 i; i < sellers.length; i++) {
                 uint percentualStake = (outstandingBetsSeller[sellers[i]].mul(odds).div(sellerMaxAmount));
@@ -182,24 +157,18 @@ contract Bet is ChainlinkClient {
         // function that winners can call to withdraw their gains
         require(betSettled == true,"The bet has to be settled first!");
         address payable to = msg.sender;
-        // discriminating between buyers and sellers here is necessary to make sure that amounts are only paid out once to one account
         // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back 
         if (maxAmountBuyable > 0) {
             to.transfer(winners[msg.sender]);
-            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(outstandingBetsSeller[msg.sender]);
-        } else if (buyersWon == true) {
-
-            to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
-            outstandingBetsBuyers[msg.sender] =  outstandingBetsBuyers[msg.sender].sub(winners[msg.sender]);
             
-        } else {
-
-            to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
-            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(winners[msg.sender]);
         }
-
-        // substracts amount paid out from winners mapping        
-        winners[msg.sender] = winners[msg.sender].sub(winners[msg.sender]); 
+        // distinguish between buyer and seller cases
+        if (buyersWon == true) {
+            to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
+        } else {
+            to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
+        }
+        delete winners[to];
         emit BetPaidOut(msg.sender, winners[msg.sender]);
     
     }
@@ -250,17 +219,6 @@ contract Bet is ChainlinkClient {
         // offered position should be deleted
         delete positionsForSale[_reseller];
     }
-
-    //Comments:
-    // - fyi: took the price transformations to Wei out for conviniece, as one can set the value of transaction to Wei in remix
-    // - Both Buyers and Sellers can now put their bet for sale (even only partly)
-    // - TBD: Now Reoffered Bets can be only bought completly, we could even implement it in a way for it only being bought partly
-
-    // TODO:
-    // - Implement oracle to get data about event outcome
-    // - Modify function to settle payments at the end of the event
-    // (- assure unique addresses in buyers/sellers array)
-    // - create withdrawl function
     
 
 }
