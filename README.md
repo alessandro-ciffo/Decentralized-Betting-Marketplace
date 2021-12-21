@@ -10,7 +10,7 @@ A bet is an amount of money that you risk on the result of an uncertain event, w
 The odds are set by bookmakers, who accepts bets from consumers and repays them in case the outcome of the bet occurs.
 Since bookmakers always have to make a profit regardless of the outcome of the event, they will apply a margin to the odds, which results in worse odds for consumers and hence smaller payoffs.
 
-Betting exchanges, however, were created to provide better odds to consumers. A betting exchange works like a stock exchange, in which instead of stocks people trade bets. Odds are established by the intersection of supply and demand, which results in better odds for consumer, and hence *higher payoffs on winning bets*.
+Betting exchanges, however, were created to provide better odds to consumers. A betting exchange works like a stock exchange, where people trade bets instead of stocks. Odds are established by the intersection of supply and demand, which results in better odds for consumer, and hence *higher payoffs on winning bets*.
 However, exchange acts as an intermediary between buyers and sellers, which earns a 5% commission on the winning bet, in order to make sure that the loser will repay the counterpart. By disposal of third parties, it is possible to cut commision fees and increase the profit of the players.
 
 ### 2.1 Example
