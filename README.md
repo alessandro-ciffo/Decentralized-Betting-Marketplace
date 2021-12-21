@@ -19,7 +19,7 @@ However, exchange acts as an intermediary between buyers and sellers, which earn
     - *Odds*: 2.5
     - *Maximum amount covered*: 100€ \
        (which indicates the maximum amount Bob is willing to repay
-       <sup>€100 </sup>&frasl;<sub>2.5</sub> = 40 tokens
+       <sup>100€</sup>&frasl;<sub>2.5</sub> = 40 tokens
     - Now Bob holds 100% of the ownership of the seller's bet, which corresponds to 40 Buyer-token
 2. Alice buys the bet for 20€, which means she could potentially win 20€ * 2.5 = 50 €
     - Alice buys 20 Buyer-token from Bob, earning 50% ownership of the Buyers-bet
