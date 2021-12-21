@@ -27,12 +27,12 @@ However, exchange acts as an intermediary between buyers and sellers, which earn
     - Mark has now the other 50% ownership of Bob
 
 - if **Milan wins** (Alice and Mark win, Bob loses), then Alice and Mark receive the value corresponding to their entry in the Outstanding bets dictionary (50€ each in this case), which is transferred to their wallets. Bob loses the 100€ he deposited in the beginning.
-- if **Milan DOES NOT win** ((Alice and Mark loses, Bob wins), Alice and Mark each hold 50% of the Buyer-Tokens representing each 50% ownership of the Buyers-bet. Based on this each of them receives 50% of the Buyers-payoff i.e. 50 euro each
+- if **Milan DOES NOT win** ((Alice and Mark loses, Bob wins), Alice and Mark each hold 50% of the Buyer-Tokens representing each 50% ownership of the Buyers-bet. Based on this, each of them receives 50% of the Buyers-payoff i.e. 50€ each.
 
 ### 2.2 Example
 4. Let's assume that before the bet ends, Alice decides to put her stake of the bet on sale, specificing how much she wants to sell the bet for, which we'll call *price*.
 5. Mario, who is interested in buying Alice's stake, buys the already placed bet.
-6. Tokens are transferred from Alice's wallet to Mario's wallet, and the money is transferred from Mario's wallet to Alice's
+6. Tokens are transferred from Alice's wallet to Mario's wallet, and the money is transferred from Mario's wallet to Alice's.
 7. The price transferred is a matter of negotiation between Alice and Mario, since odds may have been changed compared to the initial state.
 
 ## 3. Smart Contract
@@ -40,7 +40,7 @@ However, exchange acts as an intermediary between buyers and sellers, which earn
 ## 4. Front-End
 One of blockchain’s disadvantages is its *abstractness*, which constitutes our primary challenge in helping customers participating in the decentralized betting exchange marketplace, even if they know little about FinTech.
 
-In order to make the smart contract user-friendly, we implemented it inside a local front-end web application accessible through the execution of a python script. The platform is connected to the Kovan Test Network, allowing users to interact with the smart contract through some Metamask addresses we previously created and supplied with Ethers, as an exhibit of our prototype. 
+In order to make the smart contract user-friendly, we implemented it inside a local front-end web application accessible through the execution of a python script. The platform is connected to the [Kovan Test Network](https://kovan.etherscan.io/), allowing users to interact with the smart contract through some [Metamask](https://metamask.io/) addresses we previously created and supplied with Ethers, as an exhibit of our prototype. 
 Once the connection is established, the user can access the platform by following the link provided, which will access the simulation of a marketplace by buying and selling bets with the registered accounts. 
 When the match ends, the user can settle the bet so that the money is transferred to the winners’ accounts. Each transaction that is sent to the blockchain is also stored inside local SQL databases to keep track of the changes. 
 All the features of the smart contract (except for the possibility of reselling a position) and the validity checks are implemented in the web app: bets are created by the sellers, who cannot buy their own bets, and there can be more than one buyer for each bet so that the betting price will be split.
