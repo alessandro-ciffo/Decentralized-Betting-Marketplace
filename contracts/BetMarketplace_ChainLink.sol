@@ -8,7 +8,7 @@ import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 
 // If you want to deploy the contract in the JavaVM you have to:
 // - set eventFinished= true (Line 34) 
-// - comment out setPublicChainlinkToken(); in constructor (Line 
+// - comment out setPublicChainlinkToken(); in constructor (Line 75)
 
 contract Bet is ChainlinkClient {
 
@@ -27,7 +27,7 @@ contract Bet is ChainlinkClient {
     uint sellerMaxAmount; // in Wei, 1 Ether = 1e18 Wei 
     bool covered;
     uint maxAmountBuyable;
-    bool buyersWon;
+    bool public buyersWon;
     bool public betSettled = false;
 
     uint public outcome;
@@ -118,6 +118,7 @@ contract Bet is ChainlinkClient {
 
 
 
+
     function getEventOutcome() public returns (bytes32 requestId) {
         // function calls oracle
         // before calling this function Link (the currency of the oracle-provider used here) has
@@ -156,15 +157,14 @@ contract Bet is ChainlinkClient {
         if (outcome == betScenario) {
             for(uint256 i; i < sellers.length; i++) {
                 winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
-                buyersWon = false;
             }
+            buyersWon = false;
         } else {
             for(uint256 i; i < buyers.length; i++) {
                 winners[buyers[i]] = outstandingBetsBuyers[buyers[i]];
-                buyersWon = true;
             }
+            buyersWon = true;
         }
-
 
         // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back
         // - Sellers are also to the winners-mapping with value: Percentual Stake * maxAmountBuyable
@@ -183,7 +183,11 @@ contract Bet is ChainlinkClient {
         require(betSettled == true,"The bet has to be settled first!");
         address payable to = msg.sender;
         // discriminating between buyers and sellers here is necessary to make sure that amounts are only paid out once to one account
-        if (buyersWon == true) {
+        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back 
+        if (maxAmountBuyable > 0) {
+            to.transfer(winners[msg.sender]);
+            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(outstandingBetsSeller[msg.sender]);
+        } else if (buyersWon == true) {
 
             to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
             outstandingBetsBuyers[msg.sender] =  outstandingBetsBuyers[msg.sender].sub(winners[msg.sender]);
@@ -192,13 +196,6 @@ contract Bet is ChainlinkClient {
 
             to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
             outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(winners[msg.sender]);
-        }
-
-
-        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back 
-        if (maxAmountBuyable > 0) {
-            to.transfer(winners[msg.sender]);
-            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(outstandingBetsSeller[msg.sender]);
         }
 
         // substracts amount paid out from winners mapping        
