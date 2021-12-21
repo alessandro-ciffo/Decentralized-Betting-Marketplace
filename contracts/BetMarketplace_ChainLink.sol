@@ -6,6 +6,9 @@ import "github.com/provable-things/ethereum-api/provableAPI_0.5.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/math/SafeMath.sol"; 
 import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 
+// If you want to deploy the contract in the JavaVM you have to:
+// - set eventFinished= true (Line 34) 
+// - comment out setPublicChainlinkToken(); in constructor (Line 
 
 contract Bet is ChainlinkClient {
 
@@ -17,10 +20,6 @@ contract Bet is ChainlinkClient {
     bytes32  jobId;
     uint256 fee;
 
-    
-
-    uint counterId;
-    uint public id;
 
     string teams;
     uint8 betScenario;
@@ -63,8 +62,7 @@ contract Bet is ChainlinkClient {
 
     event RequestEventOutcomeFulfilled(bytes32 indexed requestID, uint256 eventOutcome);
 
-    constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount, uint256 _counterId) public payable {
-        id = _counterId;
+    constructor (string memory _teams, uint8 _betScenario, uint _odds, uint _sellerMaxAmount) public payable {
         teams = _teams;
         betScenario = _betScenario;
         odds = _odds;
@@ -133,7 +131,7 @@ contract Bet is ChainlinkClient {
 
         
         // Set the URL to perform the GET request on
-        request.add("get", "http://perfect-elephant-13.loca.lt/api/v1/matches/?name=Inter-Roma");
+        request.add("get", "https://giant-vampirebat-62.loca.lt/api/v1/matches/?name=Inter-Roma");
         request.add("path", "CONTRACT.outcome");
         // Sends the request
         return sendChainlinkRequestTo(oracle, request, fee);
@@ -142,7 +140,7 @@ contract Bet is ChainlinkClient {
     function fulfill(bytes32 _requestId, uint256 _outcome) public recordChainlinkFulfillment(_requestId) {
         // callback function of the oracle
         outcome = _outcome;
-        eventFinished == true;
+        eventFinished = true;
     }
 
 
@@ -166,24 +164,47 @@ contract Bet is ChainlinkClient {
                 buyersWon = true;
             }
         }
+
+
+        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back
+        // - Sellers are also to the winners-mapping with value: Percentual Stake * maxAmountBuyable
+        if (maxAmountBuyable > 0) {
+            for(uint256 i; i < sellers.length; i++) {
+                uint percentualStake = (outstandingBetsSeller[sellers[i]].mul(odds).div(sellerMaxAmount));
+                winners[sellers[i]] = (percentualStake.mul(maxAmountBuyable)).mul(odds);
+            }
+        }
+
         betSettled = true;      
     }
 
     function withdrawGains() public payable{
         // function that winners can call to withdraw their gains
-        require(eventFinished);
         require(betSettled == true,"The bet has to be settled first!");
+        address payable to = msg.sender;
+        // discriminating between buyers and sellers here is necessary to make sure that amounts are only paid out once to one account
         if (buyersWon == true) {
-            msg.sender.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
+
+            to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
             outstandingBetsBuyers[msg.sender] =  outstandingBetsBuyers[msg.sender].sub(winners[msg.sender]);
             
         } else {
-            msg.sender.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
+
+            to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
             outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(winners[msg.sender]);
         }
-            
-        winners[msg.sender] = winners[msg.sender].sub(winners[msg.sender]); // substracts amount paid out from winners mapping
+
+
+        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back 
+        if (maxAmountBuyable > 0) {
+            to.transfer(winners[msg.sender]);
+            outstandingBetsSeller[msg.sender] =  outstandingBetsSeller[msg.sender].sub(outstandingBetsSeller[msg.sender]);
+        }
+
+        // substracts amount paid out from winners mapping        
+        winners[msg.sender] = winners[msg.sender].sub(winners[msg.sender]); 
         emit BetPaidOut(msg.sender, winners[msg.sender]);
+    
     }
 
 
