@@ -5,7 +5,7 @@ A smart contract through which people can buy and sell bets.
 The aim of the project is to develop a platform that enables individuals to interact through bets, which can be bought and sold through a smart contract, in order to achieve a **decentralized betting marketplace**.
 
 ## 2. Introduction
-In order to clarify the topic, we will introduce the betting exchange marketplace.
+In order to clarify the topic, we will introduce the betting exchange marketplace. </b>
 A bet is an amount of money that you risk on the result of an uncertain event, which is associated to some odds. Odds indicate the amount to be won if the event occurs.
 The odds are set by bookmakers, who accepts bets from consumers and repays them in case the outcome of the bet occurs.
 Since bookmakers always have to make a profit regardless of the outcome of the event, they will apply a margin to the odds, which results in worse odds for consumers and hence smaller payoffs.
