@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Home page{% endblock %}
+{% block content %}
+
+<style>
+    td {text-align: center; vertical-align:middle;}
+    th {text-align: center; vertical-align:middle;}
+</style>
+
+<p align="center">Do you want to ...</p>
+
+<div class="d-grid gap-2 col-6 mx-auto">
+    <button class="btn btn-outline-success" onclick="location.href='buyer';" type="button">Buy</button>
+    <button class="btn btn-outline-danger" onclick="location.href='seller';" type="button">Sell</button>
+    <button class="btn btn-outline-warning" onclick="location.href='settled';" type="button">Settle</button>
+</div>
+
+<br> <br> <br> <br>
+
+
+<table class="table table-striped">
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Home team</th>
+        <th scope="col">Away team</th>
+        <th scope="col">Date</th>
+        <th scope="col">Time</th>
+      </tr>
+    </thead>
+    <tbody>
+        {% for column in values %}
+            <tr>
+                {% for item in values[column] %}
+                    <td>{{item}}</td>
+                {% endfor %}
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+
+{% endblock %}
