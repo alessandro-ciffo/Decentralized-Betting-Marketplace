@@ -4,8 +4,10 @@ import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contr
 import "@chainlink/contracts/src/v0.5/ChainlinkClient.sol";
 
 // If you want to deploy the contract in the JavaVM you have to:
-// - set eventFinished= true (Line 34) 
+// - set eventFinished= true (Line 33) 
 // - comment out setPublicChainlinkToken(); in constructor (Line 75)
+// - comment out require(eventFinished == false); in buyBet function (Line 83)
+// - Note: In the local simulation the event outcome (i.e. uint outcome) will always be zero
 
 contract Bet is ChainlinkClient {
 
@@ -23,10 +25,10 @@ contract Bet is ChainlinkClient {
     uint odds;
     uint sellerMaxAmount; // in Wei, 1 Ether = 1e18 Wei 
     bool covered;
-    uint maxAmountBuyable;
+    uint public maxAmountBuyable;
     bool public buyersWon;
     bool public betSettled = false;
-
+    
     uint public outcome;
     bool public eventFinished = false;
 
@@ -48,6 +50,7 @@ contract Bet is ChainlinkClient {
     mapping(address => bool) public isForSale; // a buyer's entry in the mapping is set to true if they want to resell the bet
     mapping (address => uint) public priceAsked; // maps buyers to the price they ask to resell their bet's position
     mapping (address => uint) public winners; // mapping of winners and amount available for withdrawal
+    mapping (address => uint) public stakeBack; // mapping for sellers to get their stake back in case the bet was not bought up entirely and the sellers lost
 
     event NewBet(string teams, uint betScenario, uint odds, uint sellerMaxAmount, bool covered, uint maxAmountBuyable);
     event BetCovered(bool covered);
@@ -60,7 +63,7 @@ contract Bet is ChainlinkClient {
         teams = _teams;
         betScenario = _betScenario;
         odds = _odds;
-        sellerMaxAmount = _sellerMaxAmount;
+        sellerMaxAmount = _sellerMaxAmount.mul(1e9);
         maxAmountBuyable = sellerMaxAmount.div(odds);
 
         // operators can be found on https://market.link/search/jobs?query=Get%20%3E%20Uint256
@@ -78,6 +81,7 @@ contract Bet is ChainlinkClient {
     function buyBet() public payable {
         // buy a stake in the bet for msg.value, meaning the caller can potentially win msg.value * odds
         require(msg.value <= maxAmountBuyable);
+        require(eventFinished == false);
         outstandingBetsBuyers[msg.sender] = outstandingBetsBuyers[msg.sender].add(msg.value.mul(odds));  // Update buyers entry in the mapping with the amount they could win
         isForSale[msg.sender] = false; // buyer's position is not for sale by default
         buyers.push(msg.sender); 
@@ -100,79 +104,6 @@ contract Bet is ChainlinkClient {
         return outstandingBetsBuyers[msg.sender];
     }
 
-    function getEventOutcome() public returns (bytes32 requestId) {
-        // this function calls the oracle to retrieve the match outcome (home team won, draw, away team won)
-        // before calling this function Link (the currency of the oracle-provider used here) has
-        // to be transfered from your Metamask wallet to the contract
-        Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
-        // Set the URL to perform the GET request on
-        string memory url = string(abi.encodePacked("http://big-lizard-50.loca.lt/api/v1/matches/?name=", teams));
-        request.add("get", url);
-        request.add("path", "CONTRACT.outcome");
-        // Sends the request
-        return sendChainlinkRequestTo(oracle, request, fee);
-    }
-
-    function fulfill(bytes32 _requestId, uint256 _outcome) public recordChainlinkFulfillment(_requestId) {
-        // callback function of the oracle
-        outcome = _outcome;
-        eventFinished = true;
-    }
-
-
-    function checkOutcome() public view returns(uint) {
-        // check outcome of the event
-        return outcome;
-    }
-
-    function settleBet() public {
-        // function to be called after bet is finished. 
-        // buyers win if the outcome of the event occurs, otherwise sellers win
-        require(eventFinished);
-        if (outcome == betScenario) {
-            for(uint256 i; i < buyers.length; i++) {
-                winners[buyers[i]] = outstandingBetsBuyers[buyers[i]];
-            }
-            buyersWon = true;
-        } else {
-            for(uint256 i; i < sellers.length; i++) {
-                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
-            }
-            buyersWon = false;
-        }
-
-        // If Bet hasnt been bought up completly --> Sellers should get their stake back
-        // Sellers are also added to the winners mapping with value: Percentual Stake * maxAmountBuyable
-        if (maxAmountBuyable > 0) {
-            for(uint256 i; i < sellers.length; i++) {
-                uint percentualStake = (outstandingBetsSeller[sellers[i]].mul(odds).div(sellerMaxAmount));
-                winners[sellers[i]] = (percentualStake.mul(maxAmountBuyable)).mul(odds);
-            }
-        }
-
-        betSettled = true;      
-    }
-
-    function withdrawGains() public payable{
-        // function that winners can call to withdraw their gains
-        require(betSettled == true,"The bet has to be settled first!");
-        address payable to = msg.sender;
-        // IF-Event: Bet hasnt been bought up completly --> Sellers should get their stake back 
-        if (maxAmountBuyable > 0) {
-            to.transfer(winners[msg.sender]);
-            
-        }
-        // distinguish between buyer and seller cases
-        if (buyersWon == true) {
-            to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
-        } else {
-            to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds))); // value won + stake is paid out
-        }
-        delete winners[to];
-        emit BetPaidOut(msg.sender, winners[msg.sender]);
-    
-    }
-
 
     // Bet reselling 
     
@@ -187,8 +118,9 @@ contract Bet is ChainlinkClient {
             require(_betAmount <=  outstandingBetsSeller[msg.sender]);
         }
 
-        uint price = _price; // convert price from Finney to Wei
-        positionsForSale[msg.sender] = BetToSale( _betAmount, price, _isBuyer); // creates a new entry for the bet in mapping with all the necessary information
+        uint price = _price.mul(1e9); // convert price from Finney to Wei
+        uint betAmount = _betAmount.mul(1e9);
+        positionsForSale[msg.sender] = BetToSale( betAmount, price, _isBuyer); // creates a new entry for the bet in mapping with all the necessary information
         isForSale[msg.sender] = true; // position is now for sale
     }
 
@@ -219,6 +151,96 @@ contract Bet is ChainlinkClient {
         // offered position should be deleted
         delete positionsForSale[_reseller];
     }
-    
 
+
+    // Retrieve Bet result
+
+    function getEventOutcome() public returns (bytes32 requestId) {
+        // this function calls the oracle to retrieve the match outcome (home team won, draw, away team won)
+        // before calling this function Link (the currency of the oracle-provider used here) has
+        // to be transfered from your Metamask wallet to the contract
+        Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
+        // Set the URL to perform the GET request on
+        string memory url = string(abi.encodePacked("http://perfect-snake-10.loca.lt/api/v1/matches/?name=/api/v1/matches/?name=", teams));
+        request.add("get", url);
+        request.add("path", "CONTRACT.outcome");
+        // Sends the request
+        return sendChainlinkRequestTo(oracle, request, fee);
+    }
+
+    function fulfill(bytes32 _requestId, uint256 _outcome) public recordChainlinkFulfillment(_requestId) {
+        // callback function of the oracle
+        outcome = _outcome;
+        eventFinished = true;
+    }
+
+
+    function checkOutcome() public view returns(uint) {
+        // check outcome of the event
+        return outcome;
+    }
+
+
+    // Bet Settlement
+
+    function settleBet() public {
+        // function to be called after bet is finished. 
+        // buyers win if the outcome of the event occurs, otherwise sellers win
+        require(eventFinished);
+        require(betSettled == false);
+        if (outcome == betScenario) {
+            for(uint256 i; i < buyers.length; i++) {
+                winners[buyers[i]] = outstandingBetsBuyers[buyers[i]];
+            }
+            buyersWon = true;
+        } else {
+            for(uint256 i; i < sellers.length; i++) {
+                winners[sellers[i]] = outstandingBetsSeller[sellers[i]];
+            }
+            buyersWon = false;
+            
+        }
+
+        // If Bet hasnt been bought up completly --> Sellers should get their stake back
+        // Sellers are also added to the winners mapping with value: Percentual Stake (in Basis Points) * maxAmountBuyable
+        if (maxAmountBuyable > 0) {
+            for(uint256 j; j < sellers.length; j++) {
+                uint stakeBp = ((outstandingBetsSeller[sellers[j]].mul(odds)).mul(10000)).div(sellerMaxAmount);
+                stakeBack[sellers[j]] = (maxAmountBuyable.mul(odds)).mul(stakeBp).div(10000);
+            }
+        }
+        betSettled = true;      
+    }
+
+    function withdrawGains() public payable{
+        // function that winners can call to withdraw their gains
+        require(betSettled == true,"The bet has to be settled first!");
+        address payable to = msg.sender;
+        if (buyersWon == true) { // distinguish between buyer and seller cases
+            
+            if (winners[msg.sender] > 0) { // payout for buyers
+                to.transfer(winners[msg.sender].add(winners[msg.sender].div(odds))); // value won + stake is paid out
+            } else if (maxAmountBuyable > 0) { // payout of remaining stake to loosing sellers in case bet have not been bought completely
+                to.transfer(stakeBack[msg.sender]);
+                delete stakeBack[msg.sender];                
+            }
+
+        } else {
+
+            if (maxAmountBuyable > 0) { // payout of remaining stake and amount won to winning sellers in case bet have not been bought completely
+                uint buyerAmountCovered = (sellerMaxAmount.div(odds)).sub(maxAmountBuyable);
+                uint amountWonBp = ((outstandingBetsSeller[msg.sender].mul(odds)).mul(10000)).div(sellerMaxAmount);
+                uint amountWon = buyerAmountCovered.mul(amountWonBp).div(10000);
+                to.transfer(amountWon.add(winners[msg.sender].mul(odds)));
+                delete stakeBack[msg.sender];
+            } else {
+                to.transfer(winners[msg.sender].add(winners[msg.sender].mul(odds)));
+            }
+            // value won + stake is paid out
+        }
+        delete winners[msg.sender];
+        emit BetPaidOut(msg.sender, winners[msg.sender]);
+    }
+        
+        
 }
