@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Seller page{% endblock %}
+{% block content %}
+<h3>Create your bet</h3>
+<br>
+
+<form action="#" method="POST">
+  <select name="seller" class="form-select" aria-label="Default select example" value="{{seller if seller}}">
+    <option selected>Who are you?</option>
+    {% for user in values[1] %}
+      <option>{{user}}</option>
+    {% endfor %}
+  </select> <br><br>
+
+<form action="#" method="POST">
+  <select name="match" class="form-select" aria-label="Default select example" value="{{match if match}}">
+    <option selected>Enter match</option>
+    {% for id in values[0] %}
+      <option>{{id}}</option>
+    {% endfor %}
+  </select> <br><br>
+
+  <form action="#" method="POST">
+    <select name="scenario" class="form-select" aria-label="Default select example" value="{{scenario if scenario}}">
+      <option selected>Enter bet scenario</option>
+        <option>0</option>
+        <option>1</option>
+        <option>2</option>
+    </select>
+
+  <br><br><input type="odds" name="odds" class="form-control" placeholder="Enter odds" value="{{odds if odds}}" />
+  <br><br><input type="maxAmount" name="maxAmount" class="form-control" placeholder="Enter max amount in gwei" value="{{maxAmount if maxAmount}}" />
+  <br><br><button type="submit" class="btn btn-outline-primary">Submit</button>
+</form>
+
+{% endblock %}
