@@ -138,26 +138,6 @@ def seller():
     form_data = request.form
     if form_data["match"] and form_data["seller"] and form_data["scenario"] and form_data["odds"] and form_data["maxAmount"]: # check if all cells are filled
       if float(form_data["maxAmount"]) > 0 and float(form_data["odds"]) > 0: # other data validations: only integers larger than 0 allowed
-        # add bet to blockchain
-        seller_account = users.loc[users["user"]==form_data["seller"]]["account"].tolist()[0]
-        seller_key = users.loc[users["user"]==form_data["seller"]]["key"].tolist()[0]
-        builder = w3.eth.contract(abi=abi, bytecode=bytecode) # instantiate contract constructor
-        tx = builder.constructor(form_data["match"], int(form_data["scenario"]), int(float(form_data["odds"])), int(float(form_data["maxAmount"]))).buildTransaction({
-          'from': seller_account,
-          'value': int(float(form_data["maxAmount"]))*1000000000,
-          'nonce': w3.eth.getTransactionCount(seller_account),
-          'gas': 30000000
-        })
-        signed_tx = w3.eth.account.signTransaction(tx, seller_key) # sign transaction
-        tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction) # deploy contract constructor        
-        tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
-        bets_list.append(w3.eth.contract(address=tx_receipt.contractAddress, abi=abi)) # create actual contract and append it to list
-        print("Bet created by {}!".format(form_data["seller"]))
-        # add bet to sql
-        new_bet = bets(form_data["match"], form_data["scenario"], int(float(form_data["odds"])), int(float(form_data["maxAmount"])), form_data["seller"]) 
-        db.session.add(new_bet)
-        db.session.commit()
-        '''
         try: # check if funds are sufficients, if not gives us a valueError
           # add bet to blockchain
           seller_account = users.loc[users["user"]==form_data["seller"]]["account"].tolist()[0]
@@ -180,7 +160,6 @@ def seller():
           db.session.commit()
         except ValueError:
           print("Insufficient funds.")
-        '''
     return render_template("seller.html", values=[ids, users["user"].tolist()])
   else:
     return render_template("seller.html", values=[ids, users["user"].tolist()])
