@@ -183,7 +183,7 @@ contract Bet is ChainlinkClient {
 
     // Bet Settlement
 
-    function settleBet() public {
+    function settleBet() public returns(bool) {
         // function to be called after bet is finished. 
         // buyers win if the outcome of the event occurs, otherwise sellers win
         require(eventFinished);
@@ -209,7 +209,8 @@ contract Bet is ChainlinkClient {
                 stakeBack[sellers[j]] = (maxAmountBuyable.mul(odds)).mul(stakeBp).div(10000);
             }
         }
-        betSettled = true;      
+        betSettled = true;
+        return(buyersWon);
     }
 
     function withdrawGains() public payable{
