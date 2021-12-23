@@ -87,4 +87,4 @@ The repo is organized as follows:
 
 - The **api** directory contains the code used to create the api that is called by the oracle inside the contract. It also stores an example json file containing the results of a match.
 
-- TODO: add frontend
+- The **frontend** directory contains the code necessary to create and run the web app that interacts with the smart contract.
