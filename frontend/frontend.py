@@ -56,7 +56,7 @@ for i in range(len(users["user"])):
   print("Username: {}".format(users["user"][i]))
   print("Address: {}".format(users["account"][i]))
   balance = w3.eth.getBalance(users["account"][i])
-  print("Current balance: {} wei (or {} eth)".format(balance, w3.fromWei(balance, 'ether')))
+  print("Current balance: {} gwei (or {} eth)".format(w3.fromWei(balance, 'gwei'), w3.fromWei(balance, 'ether')))
   print("")
 print("Follow the link below to connect to the platform!")
 
@@ -84,9 +84,7 @@ bets_list = []
     - everytime a percentage of a bet is bought, the page updates the maxAmountBuyable cell.
       Once the value goes to zero, the bet immediately becomes no longer visible in the buyer's page.
     - settled page allows for the settle of all the bets:
-      if a bet does not have a buyer, money is sent back to the seller through withdrawBetNotMatched();
-      if the bet has been matched, the winners are found through settleBet() function;
-      all the winners call withdrawGains() function and receive their fraction of the price.
+      winner(s) is found through settleBet() function, then they can call withdrawGains() to get their fraction of the price.
       When the bets are settled, sql database and bets_list are resetted.
   - DELETE AND CRETE DB EVERYTIME THE APP IS RUN, THEN RUN THE APP
 '''
@@ -140,6 +138,26 @@ def seller():
     form_data = request.form
     if form_data["match"] and form_data["seller"] and form_data["scenario"] and form_data["odds"] and form_data["maxAmount"]: # check if all cells are filled
       if float(form_data["maxAmount"]) > 0 and float(form_data["odds"]) > 0: # other data validations: only integers larger than 0 allowed
+        # add bet to blockchain
+        seller_account = users.loc[users["user"]==form_data["seller"]]["account"].tolist()[0]
+        seller_key = users.loc[users["user"]==form_data["seller"]]["key"].tolist()[0]
+        builder = w3.eth.contract(abi=abi, bytecode=bytecode) # instantiate contract constructor
+        tx = builder.constructor(form_data["match"], int(form_data["scenario"]), int(float(form_data["odds"])), int(float(form_data["maxAmount"]))).buildTransaction({
+          'from': seller_account,
+          'value': int(float(form_data["maxAmount"]))*1000000000,
+          'nonce': w3.eth.getTransactionCount(seller_account),
+          'gas': 30000000
+        })
+        signed_tx = w3.eth.account.signTransaction(tx, seller_key) # sign transaction
+        tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction) # deploy contract constructor        
+        tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
+        bets_list.append(w3.eth.contract(address=tx_receipt.contractAddress, abi=abi)) # create actual contract and append it to list
+        print("Bet created by {}!".format(form_data["seller"]))
+        # add bet to sql
+        new_bet = bets(form_data["match"], form_data["scenario"], int(float(form_data["odds"])), int(float(form_data["maxAmount"])), form_data["seller"]) 
+        db.session.add(new_bet)
+        db.session.commit()
+        '''
         try: # check if funds are sufficients, if not gives us a valueError
           # add bet to blockchain
           seller_account = users.loc[users["user"]==form_data["seller"]]["account"].tolist()[0]
@@ -147,8 +165,9 @@ def seller():
           builder = w3.eth.contract(abi=abi, bytecode=bytecode) # instantiate contract constructor
           tx = builder.constructor(form_data["match"], int(form_data["scenario"]), int(float(form_data["odds"])), int(float(form_data["maxAmount"]))).buildTransaction({
             'from': seller_account,
-            'value': int(float(form_data["maxAmount"])),
-            'nonce': w3.eth.getTransactionCount(seller_account)
+            'value': int(float(form_data["maxAmount"]))*1000000000,
+            'nonce': w3.eth.getTransactionCount(seller_account),
+            'gas': 30000000
           })
           signed_tx = w3.eth.account.signTransaction(tx, seller_key) # sign transaction
           tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction) # deploy contract constructor        
@@ -161,6 +180,7 @@ def seller():
           db.session.commit()
         except ValueError:
           print("Insufficient funds.")
+        '''
     return render_template("seller.html", values=[ids, users["user"].tolist()])
   else:
     return render_template("seller.html", values=[ids, users["user"].tolist()])
@@ -182,8 +202,8 @@ def buyer():
           bet_id = int(form_data["id"]) - 1 # just because bets_list starts from 0 and everything else starts from 1
           tx = bets_list[bet_id].functions.buyBet().buildTransaction({
             'from': buyer_account,
-            'value': int(float(form_data["amount"])),
-            'nonce': w3.eth.getTransactionCount(buyer_account)
+            'value': int(float(form_data["amount"]))*1000000000,
+            'nonce': w3.eth.getTransactionCount(buyer_account),
           })
           signed_tx = w3.eth.account.signTransaction(tx, buyer_key) # sign transaction
           tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
@@ -213,56 +233,44 @@ def settled():
     key = bets.query.filter_by(_id=(i+1)).first()
     seller_account = users.loc[users["user"]==getattr(key, "seller")]["account"].tolist()[0]
     seller_key = users.loc[users["user"]==getattr(key, "seller")]["key"].tolist()[0]
-    if getattr(key, "matched") == "nan": # not matched bets: seller is always the winner.
-      bet_winners.append(seller_account)
-      print("Bet {} winners: {}".format(i+1, getattr(key, "seller")))
-      print("Bet {} balance: {}".format(i+1, bets_list[i].functions.checkContractBalance().call()))
-      tx = bets_list[i].functions.withdrawBetNotMatched().buildTransaction({
-        'from': seller_account,
-        'value': 0,
-        'nonce': w3.eth.getTransactionCount(seller_account)
-      })
-      signed_tx = w3.eth.account.signTransaction(tx, seller_key) # sign fake buy transaction
-      tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
-      w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
-      time.sleep(5) # sleep for 5 sec just to give time to update the transactionCount
-    else: # matched bets: the winner depends on the result of settleBet()
-      tx = bets_list[i].functions.settleBet().buildTransaction({
-        'from': seller_account,
-        'value': 0,
-        'nonce': w3.eth.getTransactionCount(seller_account)
-      })
-      signed_tx = w3.eth.account.signTransaction(tx, seller_key) # sign transaction
-      tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
-      w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
-      buyers_win = bets_list[i].functions.settleBet().call()
-      if buyers_win == True:
-        buyers_keys = buyers.query.filter_by(bet_id=(i+1)).all()
-        for k in range(len(buyers_keys)):
-          bet_winners.append(getattr(buyers_keys[k], "buyer"))
-      else:
-        bet_winners.append(getattr(key, "seller"))
-      print("Bet {} winners: {}".format(i+1, bet_winners))
-      print("Bet {} balance: {}".format(i+1, bets_list[i].functions.checkContractBalance().call()))
-      for bet_winner in bet_winners:
-        winner_account = users.loc[users["user"]==bet_winner]["account"].tolist()[0]
-        winner_key = users.loc[users["user"]==bet_winner]["key"].tolist()[0]
-        
-        parsed = False
-        while not parsed:
-          try: # sometimes if the bc is very busy the nonce doesn't update and gives us a valueError. If it does, we just try again after 5 sec.
-            tx = bets_list[i].functions.withdrawGains().buildTransaction({
-              'from': winner_account,
-              'value': 0,
-              'nonce': w3.eth.getTransactionCount(winner_account)
-            })
-            signed_tx = w3.eth.account.signTransaction(tx, winner_key) # sign transaction
-            tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
-            w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
-            parsed = True
-          except ValueError:
-            print("Blockchain needs more time to update...")
-            time.sleep(5)
+    tx = bets_list[i].functions.settleBet().buildTransaction({
+      'from': seller_account,
+      'value': 0,
+      'nonce': w3.eth.getTransactionCount(seller_account)
+    })
+    signed_tx = w3.eth.account.signTransaction(tx, seller_key) # sign transaction
+    tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+    w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
+    buyers_win = bets_list[i].functions.settleBet().call()
+    if buyers_win == True:
+      buyers_keys = buyers.query.filter_by(bet_id=(i+1)).all()
+      for k in range(len(buyers_keys)):
+        bet_winners.append(getattr(buyers_keys[k], "buyer"))
+    else:
+      bet_winners.append(getattr(key, "seller"))
+    if not bet_winners:
+      bet_winners.append(getattr(key, "seller"))
+    print("Bet {} winners: {}".format(i+1, bet_winners))
+    print("Bet {} balance: {}".format(i+1, bets_list[i].functions.checkContractBalance().call()))
+    for bet_winner in bet_winners:
+      winner_account = users.loc[users["user"]==bet_winner]["account"].tolist()[0]
+      winner_key = users.loc[users["user"]==bet_winner]["key"].tolist()[0]
+      
+      parsed = False
+      while not parsed:
+        try: # sometimes if the bc is very busy the nonce doesn't update and gives us a valueError. If it does, we just try again after 5 sec.
+          tx = bets_list[i].functions.withdrawGains().buildTransaction({
+            'from': winner_account,
+            'value': 0,
+            'nonce': w3.eth.getTransactionCount(winner_account)
+          })
+          signed_tx = w3.eth.account.signTransaction(tx, winner_key) # sign transaction
+          tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+          w3.eth.waitForTransactionReceipt(tx_hash) # wait until the transaction is mined
+          parsed = True
+        except ValueError:
+          print("Blockchain needs more time to update...")
+          time.sleep(5)
      
     print("Bet settled!")
   bets_list.clear()
