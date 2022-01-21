@@ -1,5 +1,5 @@
  # Decentralized-Betting-Marketplace
-The most flexible way to buy and sell football bets in a decentralized fashion.
+The most flexible way to buy and sell football bets in a decentralized fashion. 
 
 ## 1. Abstract
 The aim of the project is to develop a platform that enables individuals to interact through bets, which can be bought and sold through a smart contract, in order to achieve a **decentralized betting marketplace**.
